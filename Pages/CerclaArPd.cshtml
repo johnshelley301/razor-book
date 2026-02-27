@@ -1,0 +1,415 @@
+@page
+@model PubSearchSite.Pages.CerclaArPdModel
+@{
+    ViewData["Title"] = "CERCLA AR/PD";
+}
+
+<style>
+    .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.8);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+    }
+    .loading-spinner {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+    }
+    .spinner {
+        width: 50px;
+        height: 50px;
+        border: 5px solid #e0e0e0;
+        border-top: 5px solid #0d6efd;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    @@keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    .loading-text {
+        font-size: 1.1rem;
+        color: #333;
+        font-weight: 500;
+    }
+    .pagination-controls {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 1rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    .pagination-info {
+        color: #666;
+        font-size: 0.9rem;
+    }
+    .pagination-buttons {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+    }
+    .pagination-buttons button {
+        padding: 0.375rem 0.75rem;
+        border: 1px solid #dee2e6;
+        background: #fff;
+        border-radius: 0.25rem;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+    .pagination-buttons button:hover:not(:disabled) {
+        background: #e9ecef;
+        border-color: #adb5bd;
+    }
+    .pagination-buttons button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    .pagination-buttons .page-number {
+        padding: 0.375rem 0.75rem;
+        font-weight: 500;
+    }
+</style>
+
+<section class="page-shell">
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <div class="loading-text">Loading data, please wait...</div>
+        </div>
+    </div>
+
+    <div class="notice-bar">
+        <p>The LM website includes both current and archived content, identified by publication date. Archived content is not actively updated or regularly reviewed. This may result in hyperlinks or other interactive elements no longer functioning as intended. Archived content may also contain references and/or text which no longer apply because of changes in law, regulation, or administration.</p>
+    </div>
+
+    <div class="container py-3">
+        <div class="lm-tabs d-flex flex-wrap gap-2">
+            <a asp-page="/Index" class="tab-btn @(Model.ActiveTab == "LM" ? "active" : "")">LM Sites</a>
+            <a asp-page="/ConsideredSites" class="tab-btn @(Model.ActiveTab == "Considered" ? "active" : "")">Considered Sites</a>
+            <a asp-page="/CerclaArPd" class="tab-btn @(Model.ActiveTab == "CERCLA" ? "active" : "")">CERCLA AR/PD</a>
+            <a asp-page="/Search" class="tab-btn tab-secondary">Search</a>
+        </div>
+    </div>
+
+    <div class="container py-4">
+        <div class="row g-3 align-items-center">
+            <div class="col-12 col-md-auto">
+                <label for="siteSelect" class="col-form-label fw-semibold">Select Site:</label>
+            </div>
+            <div class="col-12 col-md-6 col-lg-4">
+                <select id="siteSelect" class="form-select shadow-sm site-select">
+                    <option selected disabled>Select</option>
+                    @foreach (var site in Model.Locations)
+                    {
+                        <option value="@site">@site.Replace("_", " ")</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <div class="row mt-4" id="arIndexSection" style="display: none;">
+            <div class="col-12">
+                <h5 class="fw-semibold">Administrative Record (AR) Index</h5>
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped align-middle mb-4" id="arIndexTable">
+                        <thead class="table-primary">
+                            <tr>
+                                <th style="width: 4rem;">File</th>
+                                <th>Document Title</th>
+                                <th style="width: 10rem;">Site</th>
+                                <th style="width: 10rem;">State</th>
+                            </tr>
+                        </thead>
+                        <tbody id="arIndexBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4" id="siteDocumentsSection" style="display: none;">
+            <div class="col-12">
+                <h5 class="fw-semibold">Site Documents <span id="siteDocumentsCount" class="text-muted fw-normal"></span></h5>
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped align-middle" id="siteDocumentsTable">
+                        <thead class="table-primary">
+                            <tr>
+                                <th style="width: 4rem;">File</th>
+                                <th style="width: 15rem;">AR/PD NUMBER</th>
+                                <th>Document Title</th>
+                                <th style="width: 10rem;">Document Date</th>
+                            </tr>
+                        </thead>
+                        <tbody id="siteDocumentsBody"></tbody>
+                    </table>
+                </div>
+                <!-- Pagination Controls -->
+                <div id="paginationControls" class="pagination-controls" style="display: none;">
+                    <div class="pagination-info">
+                        Showing <span id="showingStart">1</span>-<span id="showingEnd">50</span> of <span id="totalItems">0</span> documents
+                    </div>
+                    <div class="pagination-buttons">
+                        <button id="btnFirst" title="First Page">&laquo; First</button>
+                        <button id="btnPrev" title="Previous Page">&lsaquo; Prev</button>
+                        <span class="page-number">Page <span id="currentPage">1</span> of <span id="totalPages">1</span></span>
+                        <button id="btnNext" title="Next Page">Next &rsaquo;</button>
+                        <button id="btnLast" title="Last Page">Last &raquo;</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+@section Scripts {
+    <script>
+        (function () {
+            const siteSelect = document.getElementById('siteSelect');
+            const arIndexSection = document.getElementById('arIndexSection');
+            const arIndexBody = document.getElementById('arIndexBody');
+            const siteDocumentsSection = document.getElementById('siteDocumentsSection');
+            const siteDocumentsBody = document.getElementById('siteDocumentsBody');
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            const siteDocumentsCount = document.getElementById('siteDocumentsCount');
+            
+            // Pagination elements
+            const paginationControls = document.getElementById('paginationControls');
+            const btnFirst = document.getElementById('btnFirst');
+            const btnPrev = document.getElementById('btnPrev');
+            const btnNext = document.getElementById('btnNext');
+            const btnLast = document.getElementById('btnLast');
+            const currentPageSpan = document.getElementById('currentPage');
+            const totalPagesSpan = document.getElementById('totalPages');
+            const showingStartSpan = document.getElementById('showingStart');
+            const showingEndSpan = document.getElementById('showingEnd');
+            const totalItemsSpan = document.getElementById('totalItems');
+            
+            // Pagination state
+            const ITEMS_PER_PAGE = 50;
+            let allSiteDocuments = [];
+            let currentPage = 1;
+            let totalPages = 1;
+
+            // Base path for PDF files
+            const PDF_BASE_PATH = '/lmsites/';
+
+            // Creates a clickable file link or returns icon if no file
+            const createFileLink = (filePath) => {
+                const cell = document.createElement('td');
+                if (filePath && filePath.trim() !== '') {
+                    const link = document.createElement('a');
+                    link.href = PDF_BASE_PATH + filePath.trim();
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                    link.title = filePath.trim();
+                    link.textContent = '📄';
+                    link.style.textDecoration = 'none';
+                    cell.appendChild(link);
+                } else {
+                    cell.textContent = '📄';
+                }
+                return cell;
+            };
+
+            const showLoading = () => {
+                loadingOverlay.style.display = 'flex';
+            };
+
+            const hideLoading = () => {
+                loadingOverlay.style.display = 'none';
+            };
+
+            const renderArIndex = (items) => {
+                arIndexBody.innerHTML = '';
+                if (!items || items.length === 0) {
+                    arIndexSection.style.display = 'none';
+                    return;
+                }
+
+                arIndexSection.style.display = 'block';
+
+                items.forEach(item => {
+                    const row = document.createElement('tr');
+
+                    // Clickable file link
+                    row.appendChild(createFileLink(item.file));
+
+                    const titleCell = document.createElement('td');
+                    titleCell.textContent = item.title || '';
+                    row.appendChild(titleCell);
+
+                    const siteCell = document.createElement('td');
+                    siteCell.textContent = item.site || '';
+                    row.appendChild(siteCell);
+
+                    const stateCell = document.createElement('td');
+                    stateCell.textContent = item.state || '';
+                    row.appendChild(stateCell);
+
+                    arIndexBody.appendChild(row);
+                });
+            };
+
+            const renderSiteDocumentsPage = () => {
+                siteDocumentsBody.innerHTML = '';
+                
+                if (!allSiteDocuments || allSiteDocuments.length === 0) {
+                    siteDocumentsSection.style.display = 'none';
+                    paginationControls.style.display = 'none';
+                    return;
+                }
+
+                siteDocumentsSection.style.display = 'block';
+                
+                const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+                const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, allSiteDocuments.length);
+                const pageItems = allSiteDocuments.slice(startIndex, endIndex);
+
+                pageItems.forEach(item => {
+                    const row = document.createElement('tr');
+
+                    // Clickable file link
+                    row.appendChild(createFileLink(item.file));
+
+                    const arPdCell = document.createElement('td');
+                    arPdCell.textContent = item.arPdNumber || '';
+                    row.appendChild(arPdCell);
+
+                    const titleCell = document.createElement('td');
+                    titleCell.textContent = item.title || '';
+                    row.appendChild(titleCell);
+
+                    const dateCell = document.createElement('td');
+                    dateCell.textContent = item.documentDate || '';
+                    row.appendChild(dateCell);
+
+                    siteDocumentsBody.appendChild(row);
+                });
+
+                // Update pagination info
+                showingStartSpan.textContent = startIndex + 1;
+                showingEndSpan.textContent = endIndex;
+                totalItemsSpan.textContent = allSiteDocuments.length;
+                currentPageSpan.textContent = currentPage;
+                totalPagesSpan.textContent = totalPages;
+
+                // Update button states
+                btnFirst.disabled = currentPage === 1;
+                btnPrev.disabled = currentPage === 1;
+                btnNext.disabled = currentPage === totalPages;
+                btnLast.disabled = currentPage === totalPages;
+
+                // Show pagination if more than one page
+                paginationControls.style.display = totalPages > 1 ? 'flex' : 'none';
+            };
+
+            const setSiteDocuments = (items) => {
+                allSiteDocuments = items || [];
+                currentPage = 1;
+                totalPages = Math.max(1, Math.ceil(allSiteDocuments.length / ITEMS_PER_PAGE));
+                
+                // Update count in header
+                if (allSiteDocuments.length > 0) {
+                    siteDocumentsCount.textContent = `(${allSiteDocuments.length} total)`;
+                } else {
+                    siteDocumentsCount.textContent = '';
+                }
+                
+                renderSiteDocumentsPage();
+            };
+
+            const clearAll = () => {
+                arIndexSection.style.display = 'none';
+                siteDocumentsSection.style.display = 'none';
+                paginationControls.style.display = 'none';
+                arIndexBody.innerHTML = '';
+                siteDocumentsBody.innerHTML = '';
+                allSiteDocuments = [];
+                currentPage = 1;
+                totalPages = 1;
+                siteDocumentsCount.textContent = '';
+            };
+
+            // Pagination button handlers
+            btnFirst?.addEventListener('click', () => {
+                if (currentPage > 1) {
+                    currentPage = 1;
+                    renderSiteDocumentsPage();
+                }
+            });
+
+            btnPrev?.addEventListener('click', () => {
+                if (currentPage > 1) {
+                    currentPage--;
+                    renderSiteDocumentsPage();
+                }
+            });
+
+            btnNext?.addEventListener('click', () => {
+                if (currentPage < totalPages) {
+                    currentPage++;
+                    renderSiteDocumentsPage();
+                }
+            });
+
+            btnLast?.addEventListener('click', () => {
+                if (currentPage < totalPages) {
+                    currentPage = totalPages;
+                    renderSiteDocumentsPage();
+                }
+            });
+
+            const loadSiteData = async (value) => {
+                if (!value) {
+                    clearAll();
+                    return;
+                }
+
+                showLoading();
+                clearAll();
+
+                try {
+                    // Fetch AR Index and Site Documents in parallel
+                    const [arIndexResp, siteDocsResp] = await Promise.all([
+                        fetch(`?handler=ArIndex&site=${encodeURIComponent(value)}`),
+                        fetch(`?handler=SiteDocuments&site=${encodeURIComponent(value)}`)
+                    ]);
+
+                    if (arIndexResp.ok) {
+                        const arIndexItems = await arIndexResp.json();
+                        renderArIndex(arIndexItems);
+                    }
+
+                    if (siteDocsResp.ok) {
+                        const siteDocsItems = await siteDocsResp.json();
+                        setSiteDocuments(siteDocsItems);
+                    }
+                } catch (err) {
+                    console.error('Error loading CERCLA data:', err);
+                    clearAll();
+                } finally {
+                    hideLoading();
+                }
+            };
+
+            siteSelect?.addEventListener('change', (e) => loadSiteData(e.target.value));
+
+            // Auto-load site from URL query parameter
+            const selectedSite = '@(Model.SelectedSite ?? "")';
+            if (selectedSite) {
+                siteSelect.value = selectedSite;
+                loadSiteData(selectedSite);
+            }
+        })();
+    </script>
+}
+
